@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
   Card,
@@ -12,386 +13,519 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Pencil, PlusCircle, Save, Trash2 } from "lucide-react";
 
-import { EditItemModal } from "@/components/auction/edit-item-modal";
-import { LaunchAuctionModal } from "@/components/auction/launch-auction-modal";
-import { ItemCard } from "@/components/auction/item-card";
-import { ItemRow } from "@/components/auction/item-row";
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { configureApiClient } from "@/lib/api-client/configure";
+import { AuctionService } from "@/lib/api-client/services/AuctionService";
+import type { UpdateAuctionDto } from "@/lib/api-client/models/UpdateAuctionDto";
+import type { UpdateAuctionItemDto } from "@/lib/api-client/models/UpdateAuctionItemDto";
+import { CancelError } from "@/lib/api-client/core/CancelablePromise";
 
-import {
-  Pencil,
-  PlusCircle,
-  Clock,
-  Layers,
-  LayoutGrid,
-  Rows3,
-  Sparkles,
-} from "lucide-react";
+interface AuctionDetailDto {
+  id: number;
+  title: string;
+  description?: string | null;
+  bannerUrl?: string | null;
+  status?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  createdAt?: string | null;
+  itemCount?: number | null;
+}
 
-const dummyAuction = {
-  id: 1,
-  title: "Evening Premium Auction",
-  description: "Exclusive koi auction event for premium collectors.",
-  banner: "/placeholder.svg",
-  status: "Draft", // Draft | Ready | Finished
+interface AuctionItemDto {
+  id: number;
+  itemId: number;
+  openBid?: number | string | null;
+  increment?: number | string | null;
+  buyNow?: number | string | null;
+  status?: string | null;
+  item?: {
+    id?: number;
+    name?: string;
+    variety?: string;
+    size?: string | number | null;
+    media?: Array<{ url?: string | null }>;
+    primaryImage?: string | null;
+  };
+}
+
+const normalizeAuctionDetail = (payload: unknown): AuctionDetailDto | null => {
+  if (!payload || typeof payload !== "object") return null;
+  return payload as AuctionDetailDto;
 };
 
-const dummyItems = [
-  {
-    id: 1,
-    name: "Kohaku Jumbo",
-    size: "70cm",
-    variety: "Kohaku",
-    openBid: 500000,
-    increment: 50000,
-    buyNow: 1500000,
-    image: "/placeholder.svg",
-  },
-  {
-    id: 2,
-    name: "Showa Supreme",
-    size: "62cm",
-    variety: "Showa",
-    openBid: 800000,
-    increment: 100000,
-    buyNow: 2500000,
-    image: "/placeholder.svg",
-  },
-];
+const normalizeAuctionItems = (payload: unknown): AuctionItemDto[] => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload as AuctionItemDto[];
+  if (typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    if (Array.isArray(record.data)) return record.data as AuctionItemDto[];
+    if (Array.isArray(record.items)) return record.items as AuctionItemDto[];
+  }
+  return [];
+};
 
-const recapItems = [
-  {
-    id: 1,
-    name: "Kohaku Jumbo",
-    bids: 18,
-    participants: 7,
-    snipingWinner: "bidder#3021",
-    openBid: 500000,
-    soldPrice: 1500000,
-  },
-  {
-    id: 2,
-    name: "Showa Supreme",
-    bids: 14,
-    participants: 5,
-    snipingWinner: "bidder#2890",
-    openBid: 800000,
-    soldPrice: 2500000,
-  },
-];
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "Belum dijadwalkan";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+type PricingState = Record<number, { openBid: string; increment: string; buyNow: string }>;
 
 export default function AuctionDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { accessToken } = useAuthSession();
+  const auctionId = Number(Array.isArray(params?.id) ? params?.id[0] : params?.id);
 
-  const [editItem, setEditItem] = useState<any | null>(null);
-  const [launchModal, setLaunchModal] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [auction, setAuction] = useState<AuctionDetailDto | null>(null);
+  const [items, setItems] = useState<AuctionItemDto[]>([]);
+  const [pricing, setPricing] = useState<PricingState>({});
+  const [form, setForm] = useState({ title: "", description: "", bannerUrl: "" });
+  const [schedule, setSchedule] = useState({ start: "", end: "" });
 
-  const addItems = () => {
-    router.push(`/dashboard/seller/auctions/${dummyAuction.id}/items`);
+  const [isLoadingAuction, setIsLoadingAuction] = useState(true);
+  const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUpdatingItem, setIsUpdatingItem] = useState<number | null>(null);
+  const [isLaunching, setIsLaunching] = useState(false);
+
+  const loadAuction = useCallback(() => {
+    if (!auctionId || !accessToken) {
+      setError("Draft tidak ditemukan.");
+      setIsLoadingAuction(false);
+      return;
+    }
+
+    configureApiClient(accessToken);
+    setIsLoadingAuction(true);
+    setError(null);
+
+    const request = AuctionService.auctionControllerGetAuctionDetail(auctionId);
+    request
+      .then((response) => {
+        const detail = normalizeAuctionDetail(response);
+        setAuction(detail);
+        setForm({
+          title: detail?.title ?? "",
+          description: detail?.description ?? "",
+          bannerUrl: detail?.bannerUrl ?? "",
+        });
+      })
+      .catch((err) => {
+        if (err instanceof CancelError) return;
+        setError(err instanceof Error ? err.message : "Tidak dapat memuat detail.");
+      })
+      .finally(() => setIsLoadingAuction(false));
+
+    return () => {
+      if (typeof request.cancel === "function") request.cancel();
+    };
+  }, [auctionId, accessToken]);
+
+  const loadItems = useCallback(() => {
+    if (!auctionId || !accessToken) {
+      setItems([]);
+      setItemsError(accessToken ? null : "Masuk untuk melihat item.");
+      setIsLoadingItems(false);
+      return;
+    }
+
+    configureApiClient(accessToken);
+    setIsLoadingItems(true);
+    setItemsError(null);
+
+    const request = AuctionService.auctionControllerGetAuctionItems(auctionId);
+    request
+      .then((payload) => {
+        const normalized = normalizeAuctionItems(payload);
+        setItems(normalized);
+        setPricing((prev) => {
+          const next: PricingState = {};
+          normalized.forEach((item) => {
+            const key = item.itemId;
+            const existing = prev[key];
+            next[key] =
+              existing ?? {
+                openBid: item.openBid ? String(item.openBid) : "",
+                increment: item.increment ? String(item.increment) : "",
+                buyNow: item.buyNow ? String(item.buyNow) : "",
+              };
+          });
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (err instanceof CancelError) return;
+        setItemsError(err instanceof Error ? err.message : "Tidak dapat memuat item.");
+      })
+      .finally(() => setIsLoadingItems(false));
+
+    return () => {
+      if (typeof request.cancel === "function") request.cancel();
+    };
+  }, [auctionId, accessToken]);
+
+  useEffect(() => {
+    const cleanup = loadAuction();
+    return () => cleanup?.();
+  }, [loadAuction]);
+
+  useEffect(() => {
+    const cleanup = loadItems();
+    return () => cleanup?.();
+  }, [loadItems]);
+
+  const normalizedStatus = useMemo(() => (auction?.status ?? "").toLowerCase(), [auction?.status]);
+  const isDraft = normalizedStatus === "draft";
+  const isScheduled = normalizedStatus === "scheduled";
+  const canEdit = isDraft || isScheduled;
+  const canLaunch = isDraft && items.length > 0;
+
+  const handleFormChange = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = event.target.value;
+    setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const editAuctionDraft = () => {
-    router.push(`/dashboard/seller/auctions/create`);
+  const handleSave = async () => {
+    if (!auction || !accessToken) {
+      toast.error("Tidak ada draft untuk disimpan.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      configureApiClient(accessToken);
+      const payload: UpdateAuctionDto = {
+        title: form.title.trim() || undefined,
+        description: form.description.trim() || undefined,
+        bannerUrl: isDraft ? form.bannerUrl || undefined : undefined,
+      };
+      await AuctionService.auctionControllerUpdate(String(auction.id), payload);
+      toast.success("Perubahan disimpan.");
+      loadAuction();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const totalProfit = recapItems.reduce(
-    (sum, item) => sum + (item.soldPrice - item.openBid),
-    0
-  );
-  const totalBids = recapItems.reduce((sum, item) => sum + item.bids, 0);
-  const totalParticipants = recapItems.reduce(
-    (sum, item) => sum + item.participants,
-    0
-  );
+  const handlePricingChange = (itemId: number, key: keyof UpdateAuctionItemDto, value: string) => {
+    setPricing((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleUpdateItem = async (itemId: number) => {
+    if (!accessToken) {
+      toast.error("Butuh sesi masuk.");
+      return;
+    }
+    const state = pricing[itemId];
+    if (!state) return;
+
+    const openBid = Number(state.openBid);
+    const increment = Number(state.increment);
+    const buyNow = state.buyNow ? Number(state.buyNow) : undefined;
+
+    if (!Number.isFinite(openBid) || openBid <= 0 || !Number.isFinite(increment) || increment <= 0) {
+      toast.error("Open bid & increment harus angka valid.");
+      return;
+    }
+
+    setIsUpdatingItem(itemId);
+    try {
+      configureApiClient(accessToken);
+      const payload: UpdateAuctionItemDto = { openBid, increment, buyNow };
+      await AuctionService.auctionControllerUpdateAuctionItemPrice(auctionId, itemId, payload);
+      toast.success("Harga item diperbarui.");
+      loadItems();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal memperbarui harga.");
+    } finally {
+      setIsUpdatingItem(null);
+    }
+  };
+
+  const handleRemoveItem = async (itemId: number) => {
+    if (!accessToken) {
+      toast.error("Butuh sesi masuk.");
+      return;
+    }
+    const confirmed = window.confirm("Hapus item dari lelang?");
+    if (!confirmed) return;
+    try {
+      configureApiClient(accessToken);
+      await AuctionService.auctionControllerRemoveAuctionItem(auctionId, itemId);
+      toast.success("Item dihapus.");
+      loadItems();
+      loadAuction();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus item.");
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!auction) {
+      toast.error("Draft tidak ditemukan.");
+      return;
+    }
+    if (!schedule.start || !schedule.end) {
+      toast.error("Isi jadwal mulai dan selesai.");
+      return;
+    }
+    if (!accessToken) {
+      toast.error("Butuh sesi masuk.");
+      return;
+    }
+
+    const startTime = new Date(schedule.start);
+    const endTime = new Date(schedule.end);
+    if (!(startTime instanceof Date) || !(endTime instanceof Date) || startTime >= endTime) {
+      toast.error("Periksa kembali jadwal.");
+      return;
+    }
+
+    setIsLaunching(true);
+    try {
+      configureApiClient(accessToken);
+      await AuctionService.auctionControllerLaunch(String(auction.id), {
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+      });
+      toast.success("Lelang dijadwalkan.");
+      loadAuction();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal launch.");
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  if (isLoadingAuction && !auction) {
+    return (
+      <div className="flex min-h-[320px] items-center justify-center">
+        <Spinner className="size-8" />
+      </div>
+    );
+  }
+
+  if (!auction) {
+    return (
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-6 text-center text-sm text-destructive">
+        {error ?? "Lelang tidak ditemukan."}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
-      {/* HEADER */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Auction #{String(dummyAuction.id).padStart(4, "0")}
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {dummyAuction.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {dummyAuction.description}
-          </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Auction #{auction.id}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{auction.title}</h1>
+          <p className="text-sm text-muted-foreground">{auction.description || "Belum ada deskripsi."}</p>
         </div>
-
-        <Badge
-          variant={
-            dummyAuction.status === "Draft"
-              ? "outline"
-              : dummyAuction.status === "Ready"
-              ? "secondary"
-              : "default"
-          }
-          className="px-4 py-1 text-sm w-fit"
-        >
-          {dummyAuction.status}
+        <Badge variant={isDraft ? "outline" : isScheduled ? "secondary" : "default"} className="px-4 py-1 text-sm w-fit">
+          {auction.status ?? "Unknown"}
         </Badge>
       </div>
 
-      {/* BANNER + SUMMARY */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="overflow-hidden rounded-2xl border lg:col-span-2">
-          <img
-            src={dummyAuction.banner}
-            className="w-full h-56 object-cover"
-            alt="Auction Banner"
-          />
-        </Card>
+      <Card className="rounded-2xl">
+        <CardContent className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Judul</Label>
+              <Input value={form.title} onChange={handleFormChange("title")} disabled={!canEdit} />
+            </div>
+            <div className="space-y-2">
+              <Label>Deskripsi</Label>
+              <Textarea rows={5} value={form.description} onChange={handleFormChange("description")} disabled={!canEdit} />
+            </div>
+            {isDraft && (
+              <div className="space-y-2">
+                <Label>Banner URL</Label>
+                <Input value={form.bannerUrl} onChange={handleFormChange("bannerUrl")} placeholder="https://..." />
+              </div>
+            )}
+            {canEdit && (
+              <Button className="gap-2" onClick={handleSave} disabled={isSaving}>
+                <Save className="size-4" />
+                {isSaving ? "Menyimpan..." : "Simpan"}
+              </Button>
+            )}
+          </div>
 
-        <Card className="rounded-2xl bg-gradient-to-b from-primary/10 via-primary/5 to-background border-primary/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Layers className="size-4" />
-              Draft Checklist
-            </CardTitle>
+          <div className="space-y-4">
+            <img src={auction.bannerUrl ?? "/placeholder.svg"} alt="Banner" className="w-full rounded-2xl border object-cover" />
+            <div className="grid gap-4 sm:grid-cols-2 text-sm text-muted-foreground">
+              <div>
+                <p className="text-xs uppercase">Mulai</p>
+                <p className="font-semibold">{formatDateTime(auction.startTime ?? auction.startsAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase">Selesai</p>
+                <p className="font-semibold">{formatDateTime(auction.endTime ?? auction.endsAt)}</p>
+              </div>
+            </div>
+            <Button variant="outline" className="gap-2" asChild>
+              <a href={`/dashboard/seller/auctions/${auction.id}/add-items`}>
+                <PlusCircle className="size-4" />
+                Kelola Item
+              </a>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {canLaunch && (
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle>Launch Auction</CardTitle>
+            <CardDescription>Jadwalkan waktu mulai & selesai sebelum lelang dibuka.</CardDescription>
           </CardHeader>
-
-          <CardContent className="space-y-4 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Items added</span>
-              <span className="font-semibold">{dummyItems.length}/10</span>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Start Time</Label>
+                <Input type="datetime-local" value={schedule.start} onChange={(e) => setSchedule((prev) => ({ ...prev, start: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>End Time</Label>
+                <Input type="datetime-local" value={schedule.end} onChange={(e) => setSchedule((prev) => ({ ...prev, end: e.target.value }))} />
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Schedule</span>
-              <span className="font-semibold">Not set</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Featured lot</span>
-              <span className="font-semibold">{dummyItems[0]?.name}</span>
-            </div>
-
-            <div className="flex flex-wrap gap-2 pt-2">
-              {dummyAuction.status === "Draft" && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 min-w-[140px] gap-2"
-                    onClick={editAuctionDraft}
-                  >
-                    <Pencil className="size-4" />
-                    Edit Draft
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 min-w-[140px] gap-2"
-                    onClick={addItems}
-                  >
-                    <PlusCircle className="size-4" />
-                    Add Items
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="flex-1 min-w-[140px] gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
-                    onClick={() => setLaunchModal(true)}
-                  >
-                    <Clock className="size-4" />
-                    Launch Auction
-                  </Button>
-                </>
-              )}
-            </div>
+            <Button onClick={handleLaunch} disabled={isLaunching}>
+              {isLaunching ? "Menjadwalkan..." : "Launch"}
+            </Button>
           </CardContent>
         </Card>
-      </div>
+      )}
 
-      {/* VIEW MODE TOGGLE */}
-      <div className="flex justify-end">
-        <div className="flex gap-2 rounded-full border px-2 py-1">
-          <Button
-            variant={viewMode === "grid" ? "default" : "ghost"}
-            size="sm"
-            className="gap-1"
-            onClick={() => setViewMode("grid")}
-          >
-            <LayoutGrid className="size-4" />
-            Grid
-          </Button>
-          <Button
-            variant={viewMode === "list" ? "default" : "ghost"}
-            size="sm"
-            className="gap-1"
-            onClick={() => setViewMode("list")}
-          >
-            <Rows3 className="size-4" />
-            List
-          </Button>
-        </div>
-      </div>
-
-      {/* ITEMS LIST */}
-      <Card className="rounded-2xl border">
+      <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle>Items in Auction</CardTitle>
-          <CardDescription>
-            All items currently included in this auction
-          </CardDescription>
+          <CardTitle>Items Dalam Lelang</CardTitle>
+          <CardDescription>Atur open bid, increment, dan buy now sesuai kebutuhan.</CardDescription>
         </CardHeader>
-
-        <CardContent>
-          {dummyItems.length > 0 ? (
-            viewMode === "grid" ? (
-              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-                {dummyItems.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    onEdit={() => setEditItem(item)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {dummyItems.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    onEdit={() => setEditItem(item)}
-                  />
-                ))}
-              </div>
-            )
+        <CardContent className="space-y-4">
+          {itemsError && (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {itemsError}
+            </div>
+          )}
+          {isLoadingItems ? (
+            <div className="flex min-h-[200px] items-center justify-center">
+              <Spinner className="size-6" />
+            </div>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Belum ada item di lelang ini.</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No items added yet.</p>
+            <div className="space-y-4">
+              {items.map((item) => {
+                const base = item.item;
+                const mediaUrl = base?.media?.find((m) => m?.url)?.url ?? base?.primaryImage ?? "/placeholder.svg";
+                const canEditItem = isDraft;
+                const pricingState = pricing[item.itemId] ?? { openBid: "", increment: "", buyNow: "" };
+                return (
+                  <div key={item.itemId} className="rounded-2xl border p-4 space-y-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-center gap-4">
+                        <img src={mediaUrl ?? "/placeholder.svg"} alt={base?.name ?? "Item"} className="h-20 w-28 rounded-xl object-cover border" />
+                        <div>
+                          <p className="font-semibold">{base?.name ?? `Item #${item.itemId}`}</p>
+                          <p className="text-xs text-muted-foreground">{base?.variety ?? "Varietas tidak tersedia"}</p>
+                        </div>
+                      </div>
+                      {canEditItem && (
+                        <Button
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={() => handleRemoveItem(item.itemId)}
+                        >
+                          <Trash2 className="size-4 mr-1" /> Hapus
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Open Bid</Label>
+                        <Input
+                          type="number"
+                          value={pricingState.openBid}
+                          onChange={(e) => handlePricingChange(item.itemId, "openBid", e.target.value)}
+                          disabled={!canEditItem}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Increment</Label>
+                        <Input
+                          type="number"
+                          value={pricingState.increment}
+                          onChange={(e) => handlePricingChange(item.itemId, "increment", e.target.value)}
+                          disabled={!canEditItem}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Buy Now (opsional)</Label>
+                        <Input
+                          type="number"
+                          value={pricingState.buyNow}
+                          onChange={(e) => handlePricingChange(item.itemId, "buyNow", e.target.value)}
+                          disabled={!canEditItem}
+                        />
+                      </div>
+                    </div>
+
+                    {canEditItem && (
+                      <Button
+                        className="gap-2"
+                        onClick={() => handleUpdateItem(item.itemId)}
+                        disabled={isUpdatingItem === item.itemId}
+                      >
+                        <Pencil className="size-4" />
+                        {isUpdatingItem === item.itemId ? "Menyimpan..." : "Simpan Harga"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* AUCTION RECAP */}
-      <Card className="rounded-2xl border">
-        <CardHeader>
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>Recap & Profit</CardTitle>
-              <CardDescription>
-                Validate performance per item after the auction closes
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2 text-sm">
-              <Badge variant="secondary" className="rounded-full px-4 py-1">
-                Profit · Rp {totalProfit.toLocaleString()}
-              </Badge>
-              <Badge variant="outline" className="rounded-full px-4 py-1">
-                {totalBids} bids · {totalParticipants} participants
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="rounded-2xl border bg-muted/50">
-              <CardContent className="pt-5">
-                <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                  Highest Sniping
-                </p>
-                <p className="text-lg font-semibold">
-                  {recapItems[0]?.snipingWinner ?? "-"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Last-second bidder
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="rounded-2xl border bg-muted/50">
-              <CardContent className="pt-5">
-                <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                  Items Sold
-                </p>
-                <p className="text-lg font-semibold">{recapItems.length}</p>
-                <p className="text-xs text-muted-foreground">
-                  Out of {dummyItems.length} total lots
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="rounded-2xl border bg-muted/50">
-              <CardContent className="pt-5">
-                <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                  Avg. Profit
-                </p>
-                <p className="text-lg font-semibold">
-                  Rp{" "}
-                  {recapItems.length
-                    ? Math.round(totalProfit / recapItems.length).toLocaleString()
-                    : "0"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Per item above open bid
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            {recapItems.map((item) => {
-              const profit = item.soldPrice - item.openBid;
-              return (
-                <div
-                  key={item.id}
-                  className="rounded-2xl border p-4 space-y-3 hover:border-primary/40 transition"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Lot #{item.id}</p>
-                      <p className="font-semibold">{item.name}</p>
-                    </div>
-                    <Badge variant="outline" className="rounded-full">
-                      {item.bids} bids
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs">Participants</p>
-                      <p className="font-semibold">{item.participants}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Sniping</p>
-                      <p className="font-semibold">{item.snipingWinner}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Open Bid</p>
-                      <p className="font-semibold">
-                        Rp {item.openBid.toLocaleString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Sold Price</p>
-                      <p className="font-semibold text-green-600">
-                        Rp {item.soldPrice.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex justify-between">
-                    <span>Profit</span>
-                    <span className="font-semibold text-green-600">
-                      Rp {profit.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* MODALS */}
-      {editItem && (
-        <EditItemModal item={editItem} onClose={() => setEditItem(null)} />
-      )}
-
-      {launchModal && (
-        <LaunchAuctionModal onClose={() => setLaunchModal(false)} />
-      )}
+      <Separator />
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="text-sm text-muted-foreground">Jumlah item: {items.length}</div>
+        <Button variant="outline" asChild>
+          <a href="/dashboard/seller/auctions">Kembali ke daftar</a>
+        </Button>
+      </div>
     </div>
   );
 }

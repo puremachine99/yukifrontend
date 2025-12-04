@@ -35,7 +35,7 @@ export function ItemRow({
         <div className="space-y-1">
           <p className="font-semibold leading-tight">{item.name}</p>
           <p className="text-xs text-muted-foreground">
-            Size {item.size} cm • {item.variety}
+            Ukuran {item.size} cm • {item.variety}
           </p>
           {item.status && (
             <Badge
@@ -56,7 +56,7 @@ export function ItemRow({
         onClick={onEdit}
       >
         <Settings className="size-4 mr-2" />
-        Manage
+        Kelola
       </Button>
     </div>
   );

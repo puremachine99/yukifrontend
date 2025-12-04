@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Settings, TrendingUp } from "lucide-react";
 
+import { formatCurrencyIDR } from "@/lib/utils/currency";
+
 type AuctionItem = {
   id: number | string;
   name: string;
@@ -43,14 +45,16 @@ export function ItemCard({
             {item.name}
           </CardTitle>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 rounded-full"
-            onClick={onEdit}
-          >
-            <Settings className="size-4" />
-          </Button>
+          {onEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full"
+              onClick={onEdit}
+            >
+              <Settings className="size-4" />
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -84,23 +88,19 @@ export function ItemCard({
       <CardContent className="px-4 pt-3 pb-4 space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Open Bid</span>
-          <span className="font-semibold">
-            Rp {item.openBid.toLocaleString()}
-          </span>
+          <span className="font-semibold">{formatCurrencyIDR(item.openBid)}</span>
         </div>
 
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Increment</span>
-          <span className="font-medium">
-            Rp {item.increment.toLocaleString()}
-          </span>
+          <span className="font-medium">{formatCurrencyIDR(item.increment)}</span>
         </div>
 
         {item.buyNow && (
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Buy Now</span>
             <span className="font-semibold text-primary">
-              Rp {item.buyNow.toLocaleString()}
+              {formatCurrencyIDR(item.buyNow)}
             </span>
           </div>
         )}

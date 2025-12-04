@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,47 +13,129 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { MapPin, Star, Trophy, UserCheck, Sparkles } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { MapPin, UserCheck, Sparkles, Upload } from "lucide-react";
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { default as Link } from "next/link";
+import { UsersService } from "@/lib/api-client/services/UsersService";
+import { configureApiClient } from "@/lib/api-client/configure";
+import { toast } from "sonner";
 
 export default function ProfilePage() {
-  // Dummy UI-only user data
-  const user = {
-    name: "John Auctioneer",
-    email: "john@example.com",
+  const { user, displayName, initials, isAuthenticated, accessToken } = useAuthSession();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [form, setForm] = useState({
+    name: "",
+    bio: "",
+    city: "",
+    instagram: "",
+    youtube: "",
     avatar: "",
-    location: "Indonesia",
-    joinDate: "April 2024",
+    banner: "",
+  });
+
+  const heroUser = useMemo(() => profile ?? user, [profile, user]);
+
+  const heroName = displayName ?? heroUser?.name ?? "User";
+  const heroEmail = heroUser?.email ?? "-";
+  const heroLocation = heroUser?.location ?? heroUser?.city ?? "-";
+  const joinDateRaw = heroUser?.createdAt ?? heroUser?.joinedAt ?? heroUser?.memberSince;
+  const parsedJoinDate =
+    typeof joinDateRaw === "string" ? Date.parse(joinDateRaw) : NaN;
+  const heroJoinDate =
+    joinDateRaw && !Number.isNaN(parsedJoinDate)
+      ? new Date(parsedJoinDate).toLocaleDateString("id-ID", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })
+      : "-";
+
+  const heroStatus = isAuthenticated ? "Logged in" : "Guest view";
+  const heroStatusDetail = isAuthenticated
+    ? "Session aktif, akses dashboard penuh."
+    : "Butuh login untuk melihat data real-time.";
+
+  const heroInitials =
+    initials ??
+    heroName
+      .split(" ")
+      .map((segment) => segment[0])
+      .filter(Boolean)
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+
+  useEffect(() => {
+    if (!accessToken) return;
+    configureApiClient(accessToken);
+    setLoading(true);
+    UsersService.usersControllerGetOwnProfile()
+      .then((res) => {
+        setProfile(res);
+        setForm((prev) => ({
+          ...prev,
+          name: res?.name ?? "",
+          bio: res?.bio ?? "",
+          city: res?.city ?? "",
+          instagram: res?.instagram ?? "",
+          youtube: res?.youtube ?? "",
+          avatar: res?.avatar ?? "",
+          banner: res?.banner ?? "",
+        }));
+      })
+      .catch(() => {
+        toast.error("Tidak dapat memuat profil.");
+      })
+      .finally(() => setLoading(false));
+  }, [accessToken]);
+
+  const handleChange = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const initials = user.name
-    .split(" ")
-    .map((v) => v[0])
-    .join("");
-
-  const stats = {
-    auctionsCreated: 14,
-    itemsSold: 22,
-    bidsPlaced: 48,
-    wonAuctions: 6,
-    sellerRating: 4.7,
+  const handleBannerUpload = async (file: File) => {
+    setUploadingBanner(true);
+    const data = new FormData();
+    data.append("banner", file);
+    try {
+      const res = await fetch("/api/upload/banner", {
+        method: "POST",
+        body: data,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message || "Upload gagal");
+      setForm((prev) => ({ ...prev, banner: json.url }));
+      toast.success("Banner berhasil diunggah.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload gagal");
+    } finally {
+      setUploadingBanner(false);
+    }
   };
 
-  const recentAuctions = [
-    { title: "Kohaku Jumbo #21", status: "Finished", bids: 12 },
-    { title: "Showa Female Supreme", status: "Finished", bids: 8 },
-    { title: "Sanke High Quality", status: "Pending", bids: 0 },
-  ];
-
-  const recentWins = [
-    { title: "Doitsu Platinum", amount: "Rp 2.350.000", date: "1 week ago" },
-    { title: "Asagi 35cm", amount: "Rp 1.200.000", date: "2 weeks ago" },
-  ];
-
-  const achievements = [
-    { name: "Trusted Seller", icon: Trophy },
-    { name: "Fast Responder", icon: Trophy },
-    { name: "Top 10 Seller", icon: Trophy },
-  ];
+  const handleSave = async () => {
+    if (!accessToken) {
+      toast.error("Masuk untuk menyimpan perubahan.");
+      return;
+    }
+    setSaving(true);
+    configureApiClient(accessToken);
+    try {
+      await UsersService.usersControllerUpdateOwnProfile(form);
+      toast.success("Profil diperbarui.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan profil");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -61,9 +144,12 @@ export default function ProfilePage() {
         <div className="px-6 py-6 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <Avatar className="h-24 w-24 border border-border rounded-2xl">
-              <AvatarImage src={user.avatar} alt={user.name} />
+              <AvatarImage
+                src={typeof heroUser?.avatar === "string" ? heroUser.avatar : undefined}
+                alt={heroName}
+              />
               <AvatarFallback className="text-2xl font-semibold uppercase">
-                {initials}
+                {heroInitials || "YK"}
               </AvatarFallback>
             </Avatar>
             <div>
@@ -71,29 +157,44 @@ export default function ProfilePage() {
                 Seller Profile
               </p>
               <h1 className="text-2xl font-semibold leading-tight">
-                {user.name}
+                {heroName}
               </h1>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                <span>{user.email}</span>
+                <span>{heroEmail}</span>
                 <span className="hidden sm:inline">•</span>
                 <span className="flex items-center gap-1">
                   <MapPin className="size-4" />
-                  {user.location}
+                  {heroLocation}
                 </span>
                 <span className="hidden sm:inline">•</span>
-                <span>Joined {user.joinDate}</span>
+                <span>Joined {heroJoinDate}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Badge className="uppercase tracking-[0.3em] text-[10px]">
+                  {heroStatus}
+                </Badge>
+                <p className="text-xs text-muted-foreground">
+                  {heroStatusDetail}
+                </p>
               </div>
             </div>
           </div>
 
           <div className="flex gap-3 flex-wrap">
-            <Button variant="outline" className="gap-2">
-              <UserCheck className="size-4" />
-              View Public Profile
+            <Button
+              variant="outline"
+              className="gap-2"
+              asChild
+              disabled={!heroUser?.id}
+            >
+              <Link href={heroUser?.id ? `/u/${heroUser.id}` : "#"}>
+                <UserCheck className="size-4" />
+                View Public Profile
+              </Link>
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={handleSave} disabled={saving || loading}>
               <Sparkles className="size-4" />
-              Edit Profile
+              {saving ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </div>
@@ -103,36 +204,29 @@ export default function ProfilePage() {
         <div className="grid gap-4 px-6 py-4 md:grid-cols-3">
           <div className="rounded-2xl border bg-muted/40 p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-              Seller Rating
+              User ID
             </p>
-            <div className="flex items-center gap-2 mt-2 text-2xl font-semibold">
-              <Star className="size-5 text-yellow-400" />
-              {stats.sellerRating}
-            </div>
+            <div className="mt-2 text-2xl font-semibold">{user?.id ?? "-"}</div>
             <p className="text-xs text-muted-foreground">
-              Consistent response time & shipping
+              Identitas internal pengguna
             </p>
           </div>
 
           <div className="rounded-2xl border bg-muted/40 p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-              Auctions Created
+              Role
             </p>
-            <p className="mt-2 text-2xl font-semibold">
-              {stats.auctionsCreated}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Draft + live events this year
-            </p>
+            <p className="mt-2 text-2xl font-semibold">{user?.role ?? "-"}</p>
+            <p className="text-xs text-muted-foreground">Hak akses saat ini</p>
           </div>
 
           <div className="rounded-2xl border bg-muted/40 p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-              Items Sold
+              Joined
             </p>
-            <p className="mt-2 text-2xl font-semibold">{stats.itemsSold}</p>
+            <p className="mt-2 text-2xl font-semibold">{heroJoinDate}</p>
             <p className="text-xs text-muted-foreground">
-              Across all categories
+              Tanggal pembuatan akun
             </p>
           </div>
         </div>
@@ -141,168 +235,43 @@ export default function ProfilePage() {
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList className="rounded-2xl">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="auctions">Auctions</TabsTrigger>
-          <TabsTrigger value="items">Items</TabsTrigger>
-          <TabsTrigger value="achievements">Achievements</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         {/* OVERVIEW */}
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card className="rounded-2xl lg:col-span-2">
-              <CardHeader className="pb-2">
-                <CardTitle>Performance Snapshot</CardTitle>
-                <CardDescription>Seller + bidder journey</CardDescription>
-              </CardHeader>
-
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border p-4 space-y-2">
-                  <p className="text-xs text-muted-foreground">Bids Placed</p>
-                  <p className="text-2xl font-semibold">{stats.bidsPlaced}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Active engagement across live auctions
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border p-4 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    Auctions Won
-                  </p>
-                  <p className="text-2xl font-semibold">{stats.wonAuctions}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Buyers trust your bids
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border p-4 space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    Active Listings
-                  </p>
-                  <p className="text-2xl font-semibold">{recentAuctions.length}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Draft + pending approval
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border p-4 space-y-2">
-                  <p className="text-xs text-muted-foreground">Live Alerts</p>
-                  <p className="text-2xl font-semibold">02</p>
-                  <p className="text-xs text-muted-foreground">
-                    Auctions starting soon
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl">
-              <CardHeader className="pb-2">
-                <CardTitle>Recent Wins</CardTitle>
-                <CardDescription>Auctions you secured</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recentWins.map((item) => (
-                  <div
-                    key={item.title}
-                    className="flex items-center justify-between rounded-2xl border p-4"
-                  >
-                    <div>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.date}
-                      </p>
-                    </div>
-                    <p className="text-sm font-semibold">{item.amount}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
           <Card className="rounded-2xl">
             <CardHeader className="pb-2">
-              <CardTitle>Recent Auctions</CardTitle>
-              <CardDescription>Your latest created auctions</CardDescription>
+              <CardTitle>Data Profil</CardTitle>
+              <CardDescription>
+                Semua informasi diambil dari akun aktif
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {recentAuctions.map((auction) => (
-                <div
-                  key={auction.title}
-                  className="flex flex-col gap-2 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-semibold">{auction.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {auction.bids} bids
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      auction.status === "Finished" ? "secondary" : "outline"
-                    }
-                    className="rounded-full px-3 py-1"
-                  >
-                    {auction.status}
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AUCTIONS TAB */}
-        <TabsContent value="auctions" className="space-y-4">
-          {recentAuctions.map((auction) => (
-            <Card key={auction.title} className="rounded-2xl">
-              <CardContent className="flex flex-col gap-2 py-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="font-semibold">{auction.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {auction.bids} bids total
-                  </p>
-                </div>
-                <Badge className="rounded-full px-3 py-1">{auction.status}</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-
-        {/* ITEMS TAB */}
-        <TabsContent value="items">
-          <Card className="rounded-2xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Your Items</CardTitle>
-              <CardDescription>Items you listed or sold</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="rounded-2xl border p-4 space-y-1">
-                  <p className="font-semibold">Item #{i}</p>
-                  <p className="text-xs text-muted-foreground">Status: Sold</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ACHIEVEMENTS TAB */}
-        <TabsContent value="achievements">
-          <Card className="rounded-2xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Achievements</CardTitle>
-              <CardDescription>Your profile badges</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              {achievements.map((a) => (
-                <Badge
-                  key={a.name}
-                  variant="secondary"
-                  className="rounded-2xl px-4 py-2 flex items-center gap-2"
-                >
-                  <a.icon className="size-4" />
-                  {a.name}
-                </Badge>
-              ))}
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between rounded-2xl border p-3">
+                <span className="text-muted-foreground">Nama</span>
+                <span className="font-semibold text-foreground">
+                  {heroName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border p-3">
+                <span className="text-muted-foreground">Email</span>
+                <span className="font-semibold text-foreground">
+                  {heroEmail}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border p-3">
+                <span className="text-muted-foreground">Lokasi</span>
+                <span className="font-semibold text-foreground">
+                  {heroLocation}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border p-3">
+                <span className="text-muted-foreground">Bergabung</span>
+                <span className="font-semibold text-foreground">
+                  {heroJoinDate}
+                </span>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -312,10 +281,136 @@ export default function ProfilePage() {
           <Card className="rounded-2xl">
             <CardHeader>
               <CardTitle>Profile Settings</CardTitle>
-              <CardDescription>Update user information (UI only)</CardDescription>
+              <CardDescription>
+                Perbarui informasi profil dan banner
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Coming soon…</p>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Nama</Label>
+                  <Input
+                    value={form.name}
+                    onChange={handleChange("name")}
+                    placeholder="Nama lengkap"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input value={heroEmail} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label>Kota</Label>
+                  <Input
+                    value={form.city}
+                    onChange={handleChange("city")}
+                    placeholder="Lokasi"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Instagram</Label>
+                  <Input
+                    value={form.instagram}
+                    onChange={handleChange("instagram")}
+                    placeholder="https://instagram.com/username"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Youtube</Label>
+                  <Input
+                    value={form.youtube}
+                    onChange={handleChange("youtube")}
+                    placeholder="https://youtube.com/..."
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Bio</Label>
+                <Textarea
+                  value={form.bio}
+                  onChange={handleChange("bio")}
+                  placeholder="Ceritakan tentang diri atau farm"
+                  rows={4}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-3">
+                  <Label>Avatar (URL)</Label>
+                  <Input
+                    value={form.avatar}
+                    onChange={handleChange("avatar")}
+                    placeholder="https://..."
+                  />
+                  <div className="border rounded-xl p-3 bg-muted/40">
+                    <p className="text-xs text-muted-foreground mb-2">Pratinjau</p>
+                    <Avatar className="h-16 w-16 border">
+                      <AvatarImage src={form.avatar} alt="avatar preview" />
+                      <AvatarFallback>{heroInitials || "YK"}</AvatarFallback>
+                    </Avatar>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Banner</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={form.banner}
+                      onChange={handleChange("banner")}
+                      placeholder="https://..."
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => document.getElementById("bannerFile")?.click()}
+                      disabled={uploadingBanner}
+                    >
+                      <Upload className="size-4" />
+                      {uploadingBanner ? "Uploading..." : "Upload"}
+                    </Button>
+                    <input
+                      id="bannerFile"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleBannerUpload(file);
+                      }}
+                    />
+                  </div>
+                  {form.banner && (
+                    <div className="rounded-xl overflow-hidden border">
+                      <img src={form.banner} alt="Banner preview" className="w-full h-32 object-cover" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      name: profile?.name ?? "",
+                      bio: profile?.bio ?? "",
+                      city: profile?.city ?? "",
+                      instagram: profile?.instagram ?? "",
+                      youtube: profile?.youtube ?? "",
+                      avatar: profile?.avatar ?? "",
+                      banner: profile?.banner ?? "",
+                    }))
+                  }
+                >
+                  Reset
+                </Button>
+                <Button onClick={handleSave} disabled={saving || loading}>
+                  {saving ? "Saving..." : "Simpan Perubahan"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

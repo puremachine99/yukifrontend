@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardHeader,
@@ -23,13 +23,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-
-const balanceSummary = {
-  available: 12500000,
-  pending: 3200000,
-  lastPayout: "Mar 05, 2025",
-  lifetime: 86000000,
-};
+import { Spinner } from "@/components/ui/spinner";
+import { configureApiClient } from "@/lib/api-client/configure";
+import { SellerBalanceService } from "@/lib/api-client/services/SellerBalanceService";
+import { CancelError } from "@/lib/api-client/core/CancelablePromise";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 const transactions = [
   {
@@ -69,7 +67,96 @@ const payoutRequests = [
 ];
 
 export default function SellerBalancePage() {
+  const { accessToken, isAuthenticated } = useAuthSession();
+  const [summary, setSummary] = useState<{
+    netBalance?: number;
+    totalSales?: number;
+    status?: string;
+    pendingWithdrawals?: { count: number; amount: number };
+    updatedAt?: string;
+  } | null>(null);
+  const [chartData, setChartData] = useState<
+    { date: string; totalSales: number; adminFee: number }[]
+  >([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [payoutOpen, setPayoutOpen] = useState(false);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setSummary(null);
+      setChartData([]);
+      return;
+    }
+
+    configureApiClient(accessToken);
+    setIsLoading(true);
+    setError(null);
+
+    const summaryRequest =
+      SellerBalanceService.sellerBalanceControllerGetMyBalance();
+    const chartRequest = SellerBalanceService.sellerBalanceControllerGetMyChart(
+      14
+    );
+
+    Promise.all([summaryRequest, chartRequest])
+      .then(([summaryResponse, chartResponse]) => {
+        setSummary(summaryResponse);
+        if (Array.isArray(chartResponse)) {
+          setChartData(chartResponse);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof CancelError) return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Tidak dapat memuat data saldo seller."
+        );
+      })
+      .finally(() => setIsLoading(false));
+
+    return () => {
+      summaryRequest.cancel?.();
+      chartRequest.cancel?.();
+    };
+  }, [accessToken]);
+
+  const formatCurrency = (value?: number | null) =>
+    `Rp ${(value ?? 0).toLocaleString("id-ID")}`;
+
+  const lastUpdated = useMemo(() => {
+    if (!summary?.updatedAt) return "-";
+    const parsed = new Date(summary.updatedAt);
+    if (Number.isNaN(parsed.getTime())) return summary.updatedAt;
+    return parsed.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  }, [summary?.updatedAt]);
+
+  const sevenDayNet = useMemo(() => {
+    if (!chartData.length) return 0;
+    return chartData.reduce(
+      (acc, point) => acc + (point.totalSales - point.adminFee),
+      0
+    );
+  }, [chartData]);
+
+  const settlementProgress = useMemo(() => {
+    const available = summary?.netBalance ?? 0;
+    const pending = summary?.pendingWithdrawals?.amount ?? 0;
+    const total = available + pending;
+    if (total === 0) return 0;
+    return Math.min(100, Math.round((available / total) * 100));
+  }, [summary]);
+
+  const payoutProgress = useMemo(() => {
+    if (!chartData.length) return 0;
+    const positiveDays = chartData.filter((day) => day.totalSales > 0).length;
+    return Math.min(100, Math.round((positiveDays / chartData.length) * 100));
+  }, [chartData]);
 
   return (
     <div className="space-y-8 pb-12">
@@ -96,6 +183,24 @@ export default function SellerBalancePage() {
         </div>
       </div>
 
+      {isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" /> Memuat data saldo...
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {!isAuthenticated && (
+        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Silakan login sebagai seller untuk melihat saldo.
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
@@ -103,27 +208,27 @@ export default function SellerBalancePage() {
             <CardDescription>Ready to withdraw</CardDescription>
           </CardHeader>
           <CardContent className="text-3xl font-semibold">
-            Rp {balanceSummary.available.toLocaleString()}
+            {formatCurrency(summary?.netBalance)}
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
-            <CardTitle>Pending Settlement</CardTitle>
-            <CardDescription>Funds clearing in escrow</CardDescription>
+            <CardTitle>Pending Withdrawals</CardTitle>
+            <CardDescription>Awaiting payout approval</CardDescription>
           </CardHeader>
           <CardContent className="text-3xl font-semibold">
-            Rp {balanceSummary.pending.toLocaleString()}
+            {formatCurrency(summary?.pendingWithdrawals?.amount)}
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
-            <CardTitle>Last Payout</CardTitle>
-            <CardDescription>BCA ****090</CardDescription>
+            <CardTitle>Last Updated</CardTitle>
+            <CardDescription>Balance status: {summary?.status ?? "-"}</CardDescription>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">
-            {balanceSummary.lastPayout}
+            {lastUpdated}
           </CardContent>
         </Card>
 
@@ -132,7 +237,7 @@ export default function SellerBalancePage() {
             <CardTitle>Lifetime Sales</CardTitle>
           </CardHeader>
           <CardContent className="text-3xl font-semibold">
-            Rp {balanceSummary.lifetime.toLocaleString()}
+            {formatCurrency(summary?.totalSales)}
           </CardContent>
         </Card>
       </div>
@@ -210,13 +315,14 @@ export default function SellerBalancePage() {
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <div>
                 <p>Escrow to balance</p>
-                <Progress value={64} className="mt-1" />
+                <Progress value={settlementProgress} className="mt-1" />
               </div>
               <div>
                 <p>Payout processing</p>
-                <Progress value={30} className="mt-1" />
+                <Progress value={payoutProgress} className="mt-1" />
               </div>
               <Separator />
+              <p>7-day net sales: {formatCurrency(sevenDayNet)}</p>
               <p>
                 Funding service fee is auto-deducted (5%). Withdrawals above Rp
                 20M require manual KYC.

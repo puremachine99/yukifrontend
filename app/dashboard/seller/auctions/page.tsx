@@ -1,123 +1,185 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import {
-  Plus,
-  Pencil,
-  Eye,
-  Trash2,
-  CalendarRange,
-  Gauge,
-  Clock8,
-  LineChart,
-} from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
+import { CalendarRange, Clock8, Gauge, Pencil, Plus, Trash2 } from "lucide-react";
 
-const dummyAuctions = [
-  {
-    id: 1,
-    title: "Kohaku Premium #12",
-    starts: "2025-03-12 09:00",
-    ends: "2025-03-12 12:00",
-    status: "Scheduled",
-    items: 5,
-  },
-  {
-    id: 2,
-    title: "Showa Supreme",
-    starts: "2025-03-10 19:00",
-    ends: "2025-03-10 22:00",
-    status: "Finished",
-    items: 3,
-  },
-  {
-    id: 3,
-    title: "Sanke Auction Evening",
-    starts: "2025-03-15 20:00",
-    ends: "2025-03-15 23:00",
-    status: "Pending",
-    items: 4,
-  },
-];
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { configureApiClient } from "@/lib/api-client/configure";
+import { AuctionService } from "@/lib/api-client/services/AuctionService";
+import { CancelError } from "@/lib/api-client/core/CancelablePromise";
 
-const auctionRecap = [
-  {
-    id: 201,
-    title: "Showa Supreme",
-    date: "Mar 10, 2025",
-    itemsSold: 3,
-    bids: 38,
-    participants: 14,
-    snipingWinner: "bidder#2048",
-    profit: 5800000,
-  },
-  {
-    id: 188,
-    title: "Kohaku Year End",
-    date: "Dec 28, 2024",
-    itemsSold: 4,
-    bids: 52,
-    participants: 19,
-    snipingWinner: "bidder#1933",
-    profit: 7200000,
-  },
-];
+interface SellerAuction {
+  id: number;
+  title: string;
+  description?: string | null;
+  bannerUrl?: string | null;
+  status?: string | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  itemCount?: number | null;
+  createdAt?: string | null;
+  totalBids?: number | null;
+  participants?: number | null;
+  winner?: string | null;
+  profit?: number | null;
+}
+
+const normalizeAuctions = (payload: unknown): SellerAuction[] => {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload as SellerAuction[];
+  if (typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    if (Array.isArray(record.data)) return record.data as SellerAuction[];
+    if (Array.isArray(record.items)) return record.items as SellerAuction[];
+    if (Array.isArray(record.results)) return record.results as SellerAuction[];
+  }
+  return [];
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "TBD";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const badgeVariantForStatus = (status?: string | null) => {
+  const normalized = (status ?? "").toLowerCase();
+  if (["draft", "pending"].includes(normalized)) return "outline" as const;
+  if (normalized === "scheduled") return "secondary" as const;
+  if (normalized === "finished") return "default" as const;
+  return "default" as const;
+};
 
 export default function SellerAuctionsPage() {
-  const scheduledCount = dummyAuctions.filter(
-    (auction) => auction.status === "Scheduled"
-  ).length;
-  const finishedCount = dummyAuctions.filter(
-    (auction) => auction.status === "Finished"
-  ).length;
-  const upcomingTitle = dummyAuctions.find(
-    (auction) => auction.status === "Scheduled"
-  )?.title;
-  const totalProfit = auctionRecap.reduce((sum, item) => sum + item.profit, 0);
-  const totalBids = auctionRecap.reduce((sum, item) => sum + item.bids, 0);
-  const totalParticipants = auctionRecap.reduce(
-    (sum, item) => sum + item.participants,
-    0
+  const { accessToken } = useAuthSession();
+  const [auctions, setAuctions] = useState<SellerAuction[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setAuctions([]);
+      setError("Butuh sesi masuk untuk memuat daftar lelang.");
+      return;
+    }
+
+    configureApiClient(accessToken);
+    setIsLoading(true);
+    setError(null);
+
+    const request = AuctionService.auctionControllerFindAll();
+
+    request
+      .then((response) => {
+        const normalized = normalizeAuctions(response);
+        setAuctions(normalized);
+      })
+      .catch((err) => {
+        if (err instanceof CancelError) return;
+        setError(err instanceof Error ? err.message : "Tidak dapat memuat lelang.");
+      })
+      .finally(() => setIsLoading(false));
+
+    return () => {
+      if (typeof request.cancel === "function") {
+        request.cancel();
+      }
+    };
+  }, [accessToken]);
+
+  const sortedAuctions = useMemo(() => {
+    return [...auctions].sort((a, b) => {
+      const dateA = new Date(a.createdAt ?? a.startsAt ?? 0).getTime();
+      const dateB = new Date(b.createdAt ?? b.startsAt ?? 0).getTime();
+      return dateB - dateA;
+    });
+  }, [auctions]);
+
+  const scheduledCount = useMemo(
+    () =>
+      sortedAuctions.filter((auction) => {
+        const status = (auction.status ?? "").toLowerCase();
+        return ["draft", "pending", "scheduled"].includes(status);
+      }).length,
+    [sortedAuctions]
   );
+
+  const completedAuctions = useMemo(
+    () =>
+      sortedAuctions.filter((auction) => {
+        const status = (auction.status ?? "").toLowerCase();
+        return ["finished", "completed", "settled"].includes(status);
+      }),
+    [sortedAuctions]
+  );
+
+  const totalProfit = useMemo(
+    () => completedAuctions.reduce((sum, entry) => sum + (entry.profit ?? 0), 0),
+    [completedAuctions]
+  );
+
+  const totalBids = useMemo(
+    () => completedAuctions.reduce((sum, entry) => sum + (entry.totalBids ?? 0), 0),
+    [completedAuctions]
+  );
+
+  const totalParticipants = useMemo(
+    () => completedAuctions.reduce((sum, entry) => sum + (entry.participants ?? 0), 0),
+    [completedAuctions]
+  );
+
+  const handleDelete = async (auctionId: number) => {
+    if (!accessToken) {
+      toast.error("Butuh sesi masuk untuk menghapus lelang.");
+      return;
+    }
+
+    const confirmed = window.confirm("Hapus lelang ini? Tindakan tidak dapat dibatalkan.");
+    if (!confirmed) return;
+
+    try {
+      configureApiClient(accessToken);
+      await AuctionService.auctionControllerRemove(String(auctionId));
+      toast.success("Lelang dihapus.");
+      setAuctions((prev) => prev.filter((auction) => auction.id !== auctionId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus lelang.");
+    }
+  };
 
   return (
     <div className="space-y-8">
-      {/* HEADER */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Penjual • Event
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">Manajemen Lelang</h1>
-          <p className="text-sm text-muted-foreground">
-            Pastikan jadwal dan lineup koi terbaik selalu konsisten sebelum live.
-          </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Penjual • Lelang</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Lelang Saya</h1>
+          <p className="text-sm text-muted-foreground">Kelola draft, jadwal, dan sesi live yang sudah selesai.</p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" className="gap-2" asChild>
             <a href="/dashboard/seller/items">
               <CalendarRange className="size-4" />
               Kelola Item
             </a>
           </Button>
-
           <Button className="gap-2" asChild>
             <a href="/dashboard/seller/auctions/create">
               <Plus className="size-4" />
@@ -127,7 +189,12 @@ export default function SellerAuctionsPage() {
         </div>
       </div>
 
-      {/* SUMMARY */}
+      {error && (
+        <div className="rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="rounded-2xl">
           <CardContent className="pt-6 flex items-start gap-3">
@@ -136,10 +203,8 @@ export default function SellerAuctionsPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Lelang</p>
-              <p className="text-2xl font-semibold">{dummyAuctions.length}</p>
-              <p className="text-xs text-muted-foreground">
-                Draft • Live • Selesai
-              </p>
+              <p className="text-2xl font-semibold">{sortedAuctions.length}</p>
+              <p className="text-xs text-muted-foreground">Draft • Scheduled • Live • Selesai</p>
             </div>
           </CardContent>
         </Card>
@@ -150,182 +215,86 @@ export default function SellerAuctionsPage() {
               <Clock8 className="size-5" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Terjadwal / Draft</p>
+              <p className="text-sm text-muted-foreground">Menunggu Launch</p>
               <p className="text-2xl font-semibold">{scheduledCount}</p>
-              <p className="text-xs text-muted-foreground">
-                Selanjutnya: {upcomingTitle ?? "—"}
-              </p>
+              <p className="text-xs text-muted-foreground">Draft & Scheduled</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
-          <CardContent className="pt-6 flex items-start gap-3">
-            <div className="rounded-full bg-muted p-2">
-              <CalendarRange className="size-5" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Selesai</p>
-              <p className="text-2xl font-semibold">{finishedCount}</p>
-              <p className="text-xs text-muted-foreground">
-                Cocok dianalisa & remarketing
-              </p>
+          <CardContent className="pt-6">
+            <CardTitle className="text-sm mb-2">Ringkasan</CardTitle>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Total Bids: {totalBids.toLocaleString("id-ID")}</p>
+              <p>Participants: {totalParticipants.toLocaleString("id-ID")}</p>
+              <p>Estimasi Profit: Rp {totalProfit.toLocaleString("id-ID")}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* FINISHED AUCTION RECAP */}
-      <Card className="rounded-2xl border">
-        <CardHeader>
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>Rekap Lelang Selesai</CardTitle>
-              <CardDescription>
-                Ringkasan bid, peserta, dan profit tiap event
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2 text-sm">
-              <Badge variant="secondary" className="rounded-full px-4 py-1">
-                Total Profit · Rp {totalProfit.toLocaleString()}
-              </Badge>
-              <Badge variant="outline" className="rounded-full px-4 py-1">
-                {totalBids} bid · {totalParticipants} peserta
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          {auctionRecap.map((recap) => (
-            <div
-              key={recap.id}
-              className="rounded-2xl border p-4 space-y-3 hover:border-primary/40 transition"
-            >
-              <div className="flex flex-wrap items-center gap-2 justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    #{String(recap.id).padStart(4, "0")}
-                  </p>
-                  <p className="text-lg font-semibold">{recap.title}</p>
-                </div>
-                <div className="text-sm text-muted-foreground">{recap.date}</div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-4">
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                    Jumlah Bid
-                  </p>
-                  <p className="text-xl font-semibold">{recap.bids}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                    Peserta
-                  </p>
-                  <p className="text-xl font-semibold">{recap.participants}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                    Pemenang Sniping
-                  </p>
-                  <p className="text-xl font-semibold">{recap.snipingWinner}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-[0.2em]">
-                    Profit
-                  </p>
-                  <p className="text-xl font-semibold text-green-600">
-                    Rp {recap.profit.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {auctionRecap.length === 0 && (
-            <div className="rounded-2xl border-dashed border p-10 text-center text-sm text-muted-foreground">
-              Belum ada rekap. Selesaikan lelang untuk melihat analitik.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* TABLE */}
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle>Lelang Aktif & Lampau</CardTitle>
-          <CardDescription>Aktivitas terbaru kamu</CardDescription>
+          <CardTitle>Daftar Lelang</CardTitle>
+          <CardDescription>
+            Urutan otomatis berdasarkan tanggal dibuat terbaru. Klik judul untuk mengelola detail.
+          </CardDescription>
         </CardHeader>
-
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Judul</TableHead>
-                <TableHead>Jadwal</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {dummyAuctions.map((auction) => (
-                <TableRow key={auction.id}>
-                  <TableCell className="font-medium">
-                    <div>{auction.title}</div>
-                    <p className="text-xs text-muted-foreground">
-                      #{String(auction.id).padStart(4, "0")}
-                    </p>
-                  </TableCell>
-
-                  <TableCell className="text-sm">
-                    <p>Mulai: {auction.starts}</p>
-                    <p className="text-muted-foreground text-xs">
-                      Selesai: {auction.ends}
-                    </p>
-                  </TableCell>
-
-                  <TableCell>
-                    <Badge
-                      variant={
-                        auction.status === "Finished"
-                          ? "secondary"
-                          : auction.status === "Pending"
-                          ? "outline"
-                          : "default"
-                      }
-                      className="rounded-full"
-                    >
-                      {auction.status}
-                    </Badge>
-                  </TableCell>
-
-                  <TableCell>{auction.items}</TableCell>
-
-                  <TableCell className="text-right space-x-2">
-                    <Button variant="ghost" size="icon" aria-label="Lihat detail">
-                      <Eye className="size-4" />
-                    </Button>
-
-                    <Button variant="ghost" size="icon" aria-label="Edit">
-                      <Pencil className="size-4" />
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-500"
-                      aria-label="Hapus"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </TableCell>
+        <CardContent className="overflow-x-auto">
+          {isLoading && sortedAuctions.length === 0 ? (
+            <div className="flex min-h-[200px] items-center justify-center">
+              <Spinner className="size-6" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Judul</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Mulai</TableHead>
+                  <TableHead>Selesai</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {sortedAuctions.map((auction) => (
+                  <TableRow key={auction.id}>
+                    <TableCell>
+                      <div className="font-semibold">{auction.title}</div>
+                      <p className="text-xs text-muted-foreground">
+                        Dibuat {formatDateTime(auction.createdAt)}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={badgeVariantForStatus(auction.status)}>
+                        {auction.status ?? "Unknown"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDateTime(auction.startsAt ?? auction.startTime)}</TableCell>
+                    <TableCell>{formatDateTime(auction.endsAt ?? auction.endTime)}</TableCell>
+                    <TableCell>{auction.itemCount ?? 0}</TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Link href={`/dashboard/seller/auctions/${auction.id}`} className="inline-flex">
+                        <Button variant="outline" size="icon">
+                          <Pencil className="size-4" />
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={() => handleDelete(auction.id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

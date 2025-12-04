@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Settings } from "lucide-react";
 
+import { formatCurrencyIDR } from "@/lib/utils/currency";
+
 type AuctionRowItem = {
   id: number | string;
   name: string;
@@ -42,14 +44,14 @@ export function ItemRow({
           </p>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>Open: Rp {item.openBid.toLocaleString()}</span>
+            <span>Open: {formatCurrencyIDR(item.openBid)}</span>
             <span className="text-muted-foreground/50">•</span>
-            <span>Inc: {item.increment.toLocaleString()}</span>
+            <span>Inc: {formatCurrencyIDR(item.increment)}</span>
             {item.buyNow && (
               <>
                 <span className="text-muted-foreground/50">•</span>
                 <span className="text-primary font-medium">
-                  Buy: Rp {item.buyNow.toLocaleString()}
+                  Buy: {formatCurrencyIDR(item.buyNow)}
                 </span>
               </>
             )}
@@ -64,15 +66,17 @@ export function ItemRow({
       </div>
 
       {/* EDIT BUTTON */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="rounded-full w-full md:w-auto"
-        onClick={onEdit}
-      >
-        <Settings className="size-4 mr-2" />
-        Adjust
-      </Button>
+      {onEdit && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-full w-full md:w-auto"
+          onClick={onEdit}
+        >
+          <Settings className="size-4 mr-2" />
+          Adjust
+        </Button>
+      )}
     </div>
   );
 }

@@ -22,27 +22,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { toast } from "sonner";
-
-const cartItems = [
-  {
-    id: "CART-1012",
-    title: "Kohaku Supreme 65cm",
-    seller: "Shinoda Koi Farm",
-    winPrice: 3700000,
-    deadline: "Mar 13, 21:00",
-    expiresInHours: 54,
-    status: "UNPAID",
-  },
-  {
-    id: "CART-1010",
-    title: "Showa Champion 58cm",
-    seller: "Izumiya",
-    winPrice: 3100000,
-    deadline: "Mar 12, 18:00",
-    expiresInHours: 30,
-    status: "UNPAID",
-  },
-];
+import { useEffect, useMemo, useState } from "react";
+import { useAuthSession } from "@/hooks/use-auth-session";
 
 const addressOptions = [
   {
@@ -58,9 +39,84 @@ const addressOptions = [
 ];
 
 export default function BidderCartPage() {
-  const payItem = (id: string) => {
-    toast.success(`Proceeding to checkout for ${id} (UI only)`);
+  const { accessToken } = useAuthSession();
+  const [items, setItems] = useState<
+    Array<{
+      id: string;
+      title: string;
+      seller: string;
+      winPrice: number;
+      deadline: string;
+      status: string;
+    }>
+  >([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("wonCartItems");
+      const parsed = stored ? JSON.parse(stored) : [];
+      setItems(parsed);
+    } catch {
+      setItems([]);
+    }
+  }, []);
+
+  const payItem = async (id: string) => {
+    if (!accessToken) {
+      toast.error("Masuk untuk membayar.");
+      return;
+    }
+
+    setPayingId(id);
+    const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+
+    try {
+      const res = await fetch(`${apiBase}/cart/${id}/payment`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Gagal membuat pembayaran");
+      }
+
+      const payload = (await res.json()) as { checkoutUrl?: string; invoiceId?: string };
+      if (!payload.checkoutUrl) {
+        throw new Error("URL pembayaran tidak ditemukan.");
+      }
+
+      toast.success("Mengalihkan ke pembayaran…");
+      window.location.href = payload.checkoutUrl;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal membuat pembayaran");
+    } finally {
+      setPayingId(null);
+    }
   };
+
+  const cartItems = useMemo(() => {
+    return items.map((item) => {
+      const deadline = new Date(item.deadline);
+      const diffHours = Math.max(
+        0,
+        Math.floor((deadline.getTime() - Date.now()) / (60 * 60 * 1000))
+      );
+      return {
+        ...item,
+        expiresInHours: diffHours,
+        deadlineLabel: deadline.toLocaleString("id-ID", {
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+    });
+  }, [items]);
 
   return (
     <div className="space-y-8 pb-12">
@@ -103,28 +159,32 @@ export default function BidderCartPage() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs">Win Price</p>
-                  <p className="font-semibold">Rp {item.winPrice.toLocaleString()}</p>
+                  <p className="font-semibold">Rp {item.winPrice.toLocaleString("id-ID")}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Deadline</p>
-                  <p className="font-semibold">{item.deadline}</p>
+                  <p className="font-semibold">{item.deadlineLabel}</p>
                 </div>
               </div>
 
               <Progress value={((72 - item.expiresInHours) / 72) * 100} />
               <div className="text-xs text-muted-foreground">
-                {item.expiresInHours} hours left before auto-ban
+                {item.expiresInHours} jam tersisa sebelum dibatalkan
               </div>
 
-              <Button className="w-full" onClick={() => payItem(item.id)}>
-                Checkout via Xendit (placeholder)
+              <Button
+                className="w-full"
+                onClick={() => payItem(item.id)}
+                disabled={!!payingId}
+              >
+                {payingId === item.id ? "Memproses..." : "Checkout"}
               </Button>
             </div>
           ))}
 
           {cartItems.length === 0 && (
             <div className="rounded-2xl border-dashed border p-8 text-center text-sm text-muted-foreground">
-              Nothing to pay. Win a bid to see it here.
+              Nothing to pay. Menangkan bid atau Buy Now untuk muncul di sini.
             </div>
           )}
         </CardContent>

@@ -1,0 +1,1141 @@
+{
+  "info": {
+    "name": "YukiAuction Backend API",
+    "_postman_id": "yukiauction-collection-2025",
+    "description": "Postman collection covering the latest NestJS backend endpoints (auth, auction, ads, finance, etc.)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"user@example.com\",\"password\":\"P@ssw0rd!\",\"name\":\"Test User\",\"phone\":\"08123\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"user@example.com\",\"password\":\"P@ssw0rd!\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"refreshToken\":\"{{refreshToken}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/users/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"city\":\"Jakarta\",\"bio\":\"Hello there\"}"
+            }
+          }
+        },
+        {
+          "name": "Public Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/users/public/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auction",
+      "item": [
+        {
+          "name": "List All Auctions (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auction"
+          }
+        },
+        {
+          "name": "Live Auctions (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auction/live"
+          }
+        },
+        {
+          "name": "Auction Detail (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auction/1"
+          }
+        },
+        {
+          "name": "Create Auction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auction",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\":\"Evening Koi Auction\",\"description\":\"Live auction\",\"startTime\":\"2025-11-09T09:00:00Z\",\"endTime\":\"2025-11-09T10:00:00Z\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "My Auctions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auction/me"
+          }
+        },
+        {
+          "name": "Launch Auction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auction/1/launch",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"startTime\":\"2025-11-25T07:30:00Z\",\"endTime\":\"2025-11-25T10:30:00Z\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get Auction Items",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auction/1/items"
+          }
+        },
+        {
+          "name": "Add Item to Auction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auction/1/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"itemId\":10}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove Item from Auction",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auction/1/items/10"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Items",
+      "item": [
+        {
+          "name": "List Items (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/items?page=1&limit=12"
+          }
+        },
+        {
+          "name": "Get Item Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/items/1"
+          }
+        },
+        {
+          "name": "Create Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"Premium Kohaku\", \"variety\": \"Showa\", \"description\": \"Healthy koi ready for auction\", \"startingBid\": 1500000, \"bidIncrement\": 50000, \"buyItNow\": 3500000, \"gender\": \"Female\", \"age\": \"Nisai (2 years)\", \"size\": 45, \"media\": [{\"url\": \"https://cdn.yukiauction.com/items/kohaku-1.jpg\", \"type\": \"image\"}]}"
+            }
+          }
+        },
+        {
+          "name": "Upload Item Media",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/1/media",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"url\": \"https://cdn.yukiauction.com/items/kohaku-1b.jpg\", \"type\": \"image\"}"
+            }
+          }
+        },
+        {
+          "name": "Update Item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/items/1",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Updated description\", \"buyItNow\": 3000000}"
+            }
+          }
+        },
+        {
+          "name": "Delete Item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/items/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bid",
+      "item": [
+        {
+          "name": "Place Bid",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/bid",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"itemOnAuctionId\":1,\"amount\":1500000}"
+            }
+          }
+        },
+        {
+          "name": "Buy Now",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/bid",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"itemOnAuctionId\":1,\"amount\":2500000,\"isBuyNow\":true}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cart",
+      "item": [
+        {
+          "name": "View Cart",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/cart"
+          }
+        },
+        {
+          "name": "Pay Cart",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/cart/1/pay",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"paymentMethod\":\"manual_transfer\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notification",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notification"
+          }
+        },
+        {
+          "name": "Mark All Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notification/read-all"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Withdrawal",
+      "item": [
+        {
+          "name": "Request Withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawal",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amount\":1000000}"
+            }
+          }
+        },
+        {
+          "name": "My Withdrawals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawal"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Seller Balance",
+      "item": [
+        {
+          "name": "Me: Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/seller-balance/me"
+          }
+        },
+        {
+          "name": "Me: Chart (7d)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/seller-balance/me/chart?range=7"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Advertisement",
+      "item": [
+        {
+          "name": "Create Advertisement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ads",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"adPlanId\":1,\"title\":\"My Promo\",\"mediaUrl\":\"https://img\",\"redirectUrl\":\"https://link\",\"startDate\":\"2025-11-10\"}"
+            }
+          }
+        },
+        {
+          "name": "My Advertisements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/ads/me"
+          }
+        },
+        {
+          "name": "Public: Active Ads",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/ads/active?position=homepage_hero"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Seller Review",
+      "item": [
+        {
+          "name": "Pending Reviews (buyer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/seller-review/pending"
+          }
+        },
+        {
+          "name": "Create Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/seller-review",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"transactionId\":1,\"rating\":5,\"shippingScore\":4,\"comment\":\"Fast delivery!\"}"
+            }
+          }
+        },
+        {
+          "name": "Public: Seller Reviews",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/seller-review/seller/1?page=1&limit=10"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Dashboard & Overview",
+          "item": [
+            {
+              "name": "Dashboard",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/dashboard"
+              }
+            },
+            {
+              "name": "Revenue Summary (compact)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/revenue-summary"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Management",
+          "item": [
+            {
+              "name": "Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/users"
+              }
+            },
+            {
+              "name": "User Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/users/1"
+              }
+            },
+            {
+              "name": "Ban User",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/users/1/ban"
+              }
+            },
+            {
+              "name": "Unban User",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/users/1/unban"
+              }
+            },
+            {
+              "name": "Create User (direct)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/users",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"name\": \"Admin Created\", \"email\": \"managed-user@example.com\", \"password\": \"Secret123!\", \"role\": \"user\"}"
+                }
+              }
+            },
+            {
+              "name": "List Users (direct)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/users"
+              }
+            },
+            {
+              "name": "Get User Detail (direct)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/users/1"
+              }
+            },
+            {
+              "name": "Update User (direct)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/users/1",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"city\": \"Bandung\", \"isPriority\": true}"
+                }
+              }
+            },
+            {
+              "name": "Delete User (direct)",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/users/1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auction Moderation",
+          "item": [
+            {
+              "name": "Auctions (filter)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/auctions?status=ready"
+              }
+            },
+            {
+              "name": "Approve Auction",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/auctions/1/approve"
+              }
+            },
+            {
+              "name": "Reject Auction",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/auctions/1/reject"
+              }
+            },
+            {
+              "name": "Report Auction",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/auctions/1/report"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Withdrawal Management",
+          "item": [
+            {
+              "name": "Admin: List Withdrawals",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/withdrawals?status=pending"
+              }
+            },
+            {
+              "name": "Admin: Process Withdrawal",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/admin/withdrawals/1/process",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"status\":\"approved\",\"payoutReference\":\"TRX-001\"}"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seller Balance",
+          "item": [
+            {
+              "name": "Admin: List Balances",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/seller-balance?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Admin: Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/seller-balance/overview"
+              }
+            },
+            {
+              "name": "Admin: Seller Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/seller-balance/1"
+              }
+            },
+            {
+              "name": "Admin: Seller Chart",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/seller-balance/1/chart?range=14"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revenue Reports",
+          "item": [
+            {
+              "name": "List (paginated)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/revenue-summary?page=1&limit=30"
+              }
+            },
+            {
+              "name": "Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/revenue-summary/overview"
+              }
+            },
+            {
+              "name": "Chart (14d)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/revenue-summary/chart?range=14"
+              }
+            },
+            {
+              "name": "Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/revenue-summary/1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ad Plans",
+          "item": [
+            {
+              "name": "Create Plan",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/ad-plan",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"name\":\"Homepage Hero\",\"description\":\"Prime placement\",\"price\":500000,\"duration\":7,\"position\":\"homepage_hero\"}"
+                }
+              }
+            },
+            {
+              "name": "List Plans",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/ad-plan"
+              }
+            },
+            {
+              "name": "Get Plan Detail",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/ad-plan/1"
+              }
+            },
+            {
+              "name": "Update Plan",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/ad-plan/1",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"price\":600000,\"isActive\":true}"
+                }
+              }
+            },
+            {
+              "name": "Delete Plan",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/ad-plan/1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Advertisement Moderation",
+          "item": [
+            {
+              "name": "Admin: List Advertisements",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/ads/admin?status=pending"
+              }
+            },
+            {
+              "name": "Admin: Update Ad Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/ads/1/status",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"status\":\"approved\",\"note\":\"Looks good\"}"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    }
+  ]
+}

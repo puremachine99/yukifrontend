@@ -19,7 +19,10 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@/lib/api-client/services/itemsService": [
+        "./lib/api-client/services/ItemsService.ts"
+      ]
     }
   },
   "include": [

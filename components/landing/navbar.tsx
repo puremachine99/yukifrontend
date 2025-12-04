@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { Moon, Sun } from "lucide-react";
 
 const links = [
   { href: "/", label: "Beranda" },
@@ -13,6 +17,10 @@ const links = [
 
 export function LandingNavbar() {
   const pathname = usePathname();
+  const { isAuthenticated } = useAuthSession();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur">
@@ -42,12 +50,33 @@ export function LandingNavbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/login">Masuk</Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {!mounted ? (
+              <div className="size-4" />
+            ) : theme === "dark" ? (
+              <Sun className="size-4" />
+            ) : (
+              <Moon className="size-4" />
+            )}
           </Button>
-          <Button size="sm" asChild>
-            <Link href="/signup">Daftar</Link>
-          </Button>
+          {isAuthenticated ? (
+            <Button size="sm" asChild>
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/login">Masuk</Link>
+              </Button>
+              <Button size="sm" asChild>
+                <Link href="/signup">Daftar</Link>
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { toast } from "sonner";
 
 import {
   Card,
@@ -14,54 +15,147 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Upload, Image, Sparkles, ArrowLeft, CalendarRange } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowLeft, CalendarRange, Sparkles, Upload } from "lucide-react";
+
+import { useAuthSession } from "@/hooks/use-auth-session";
+import { configureApiClient } from "@/lib/api-client/configure";
+import { AuctionService } from "@/lib/api-client/services/AuctionService";
+import type { CreateAuctionDto } from "@/lib/api-client/models/CreateAuctionDto";
+
+const initialForm: CreateAuctionDto = {
+  title: "",
+  description: "",
+  bannerUrl: "",
+};
+
+type UploadResponse = {
+  url: string;
+};
 
 export default function CreateAuctionPage() {
   const router = useRouter();
+  const { accessToken } = useAuthSession();
 
-  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [form, setForm] = useState(initialForm);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const previewRef = useRef<string | null>(null);
 
-  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  useEffect(() => {
+    return () => {
+      if (previewRef.current) {
+        URL.revokeObjectURL(previewRef.current);
+      }
+    };
+  }, []);
 
-    const url = URL.createObjectURL(file);
-    setBannerPreview(url);
+  const canSubmit = Boolean(form.title.trim() && form.description?.trim() && form.bannerUrl && !isUploading);
+
+  const handleChange =
+    (key: keyof CreateAuctionDto) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setForm((prev) => ({ ...prev, [key]: value }));
+    };
+
+  const uploadBannerFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append("banner", file);
+
+    const response = await fetch("/api/upload/banner", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || "Gagal mengunggah banner.");
+    }
+
+    const payload = (await response.json()) as UploadResponse;
+    if (!payload.url) {
+      throw new Error("Endpoint upload tidak mengembalikan URL.");
+    }
+    return payload.url;
   };
 
-  const handleSaveDraft = () => {
-    toast.success("Draft lelang berhasil dibuat");
-    router.push("/dashboard/seller/auctions/1"); // dummy id
+  const handleBannerUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (previewRef.current) {
+      URL.revokeObjectURL(previewRef.current);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    previewRef.current = objectUrl;
+    setForm((prev) => ({ ...prev, bannerUrl: objectUrl }));
+    setUploadError(null);
+    setIsUploading(true);
+
+    try {
+      const uploaded = await uploadBannerFile(file);
+      setForm((prev) => ({ ...prev, bannerUrl: uploaded }));
+      toast.success("Banner berhasil diunggah.");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Gagal mengunggah banner.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit) {
+      toast.error("Lengkapi semua kolom terlebih dahulu.");
+      return;
+    }
+
+    if (!accessToken) {
+      toast.error("Butuh sesi masuk untuk membuat lelang.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      configureApiClient(accessToken);
+      const payload: CreateAuctionDto = {
+        title: form.title.trim(),
+        description: form.description?.trim() || undefined,
+        bannerUrl: form.bannerUrl,
+      };
+
+      const created = await AuctionService.auctionControllerCreate(payload);
+      const createdId = (created as { id?: number | string })?.id;
+      toast.success("Lelang berhasil dibuat.");
+      router.push(`/dashboard/seller/auctions/${createdId ?? ""}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal membuat lelang.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Seller • Auction Draft
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Create Auction
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Package your koi lineup into a compelling live event
-          </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Seller • Auction Draft</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Buat Lelang</h1>
+          <p className="text-sm text-muted-foreground">Masukkan informasi dasar. Jadwal ditentukan saat launch.</p>
         </div>
-
         <div className="flex gap-3">
           <Button variant="ghost" className="gap-2" asChild>
             <a href="/dashboard/seller/auctions">
               <ArrowLeft className="size-4" />
-              Back to list
+              Kembali
             </a>
           </Button>
-
           <Button variant="outline" className="gap-2" asChild>
             <a href="/dashboard/seller/items">
               <Sparkles className="size-4" />
-              Pick Items
+              Pilih Item
             </a>
           </Button>
         </div>
@@ -70,124 +164,74 @@ export default function CreateAuctionPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="rounded-2xl lg:col-span-2">
           <CardHeader>
-            <CardTitle>Auction Information</CardTitle>
-            <CardDescription>
-              Fill the essentials — this stays in <strong>Draft</strong> until
-              launch
-            </CardDescription>
+            <CardTitle>Informasi Lelang</CardTitle>
+            <CardDescription>Judul dan deskripsi akan terlihat oleh bidder.</CardDescription>
           </CardHeader>
-
           <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Title</Label>
-                <Input placeholder="Evening Premium Auction" />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Schedule (optional)</Label>
-                <div className="flex gap-2">
-                  <Input type="date" />
-                  <Input type="time" />
-                </div>
-              </div>
-            </div>
-
             <div className="space-y-2">
-              <Label>Description</Label>
+              <Label>Judul</Label>
+              <Input placeholder="Premium Night Auction" value={form.title} onChange={handleChange("title")} />
+            </div>
+            <div className="space-y-2">
+              <Label>Deskripsi</Label>
               <Textarea
-                placeholder="Short description about this auction..."
-                className="h-28"
+                rows={5}
+                placeholder="Ceritakan highlight koi dan jadwal...
+"
+                value={form.description}
+                onChange={handleChange("description")}
               />
             </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Timezone</Label>
-                <Input placeholder="GMT+7 (Jakarta)" />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Expected lots</Label>
-                <Input type="number" placeholder="e.g. 12" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Banner</Label>
-
-              <div className="flex flex-col gap-3">
-                {bannerPreview ? (
-                  <div className="relative rounded-2xl overflow-hidden border">
-                    <img
-                      src={bannerPreview}
-                      className="w-full h-48 object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div className="h-40 border rounded-2xl flex flex-col items-center justify-center text-muted-foreground">
-                    <Image className="size-10 mb-2" />
-                    <p className="text-sm font-medium">No banner uploaded</p>
-                    <p className="text-xs">Recommended 1600×600, JPG/PNG</p>
-                  </div>
-                )}
-
-                <Button variant="outline" className="w-fit gap-2">
-                  <Upload className="size-4" />
-                  <Label className="cursor-pointer">
-                    <span>Upload Banner</span>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleBannerUpload}
-                    />
-                  </Label>
-                </Button>
-              </div>
-            </div>
-
-            <Button className="w-full" onClick={handleSaveDraft}>
-              Save Draft
-            </Button>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
           <CardHeader>
-            <CardTitle>Launch Steps</CardTitle>
-            <CardDescription>
-              Quick reminders before you go live
-            </CardDescription>
+            <CardTitle>Banner</CardTitle>
+            <CardDescription>Gambar ini tampil di halaman landing lelang.</CardDescription>
           </CardHeader>
-
-          <CardContent className="space-y-4 text-sm">
-            <div className="rounded-xl border p-4 space-y-2">
-              <p className="font-semibold flex items-center gap-2">
-                <CalendarRange className="size-4 text-primary" />
-                Timeline ready
-              </p>
-              <p className="text-muted-foreground">
-                Lock in start/end times so bidders can set reminders.
-              </p>
+          <CardContent className="space-y-4">
+            <div className="rounded-xl border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <CalendarRange className="size-4 mb-2" />Gunakan rasio 16:9 agar pas di semua perangkat.
             </div>
-
-            <div className="rounded-xl border p-4 space-y-2">
-              <p className="font-semibold">Items selected</p>
-              <p className="text-muted-foreground">
-                Add koi pieces with rich media and pricing details.
-              </p>
-            </div>
-
-            <div className="rounded-xl border p-4 space-y-2">
-              <p className="font-semibold">Preview launch</p>
-              <p className="text-muted-foreground">
-                Use Launch button on draft page to simulate final state.
-              </p>
+            {form.bannerUrl ? (
+              <img src={form.bannerUrl} alt="Preview" className="w-full rounded-xl border object-cover" />
+            ) : (
+              <div className="aspect-video w-full rounded-xl border border-dashed bg-muted/20" />
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="auction-banner">Upload Banner</Label>
+              <Button variant="outline" className="gap-2" disabled={isUploading} asChild>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <Upload className="size-4" />
+                  {isUploading ? "Mengunggah..." : "Pilih berkas"}
+                  <input
+                    id="auction-banner"
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={handleBannerUpload}
+                    disabled={isUploading}
+                  />
+                </label>
+              </Button>
+              {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <Card className="rounded-2xl">
+        <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">Siap lanjut?</p>
+            <p className="text-xs text-muted-foreground">Kamu bisa menambahkan item setelah draft dibuat.</p>
+          </div>
+          <Button className="gap-2" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>
+            {isSubmitting ? "Menyimpan..." : "Simpan Draft"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
